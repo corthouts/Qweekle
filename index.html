@@ -57,6 +57,14 @@
   .bar .d{font-size:.66rem; color:var(--muted); font-weight:600}
   .bar .v{font-size:.6rem; color:var(--muted)}
   .bar.today .d{color:var(--accent2)}
+  .irow{display:flex; align-items:center; gap:10px; padding:9px 2px; border-top:1px solid var(--line); font-size:.9rem}
+  .irow:first-child{border-top:none}
+  .iq{min-width:38px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums}
+  .il{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ia{color:var(--muted); font-weight:600; font-size:.82rem; white-space:nowrap}
+  .ia .g{color:var(--accent2)}
+  .miniload{color:var(--muted); font-size:.85rem; padding:10px 2px; display:flex; align-items:center; gap:8px}
+  .miniload .s{width:15px; height:15px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:sp .8s linear infinite}
   .rows{margin-top:6px}
   .row{display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--line)}
   .row:first-child{border-top:none}
@@ -129,6 +137,7 @@ const AUTOREFRESH_MS = 5*60*1000;
 const $ = s => document.querySelector(s);
 const eur = n => (n<0? "-":"") + "€" + Math.abs(n).toLocaleString("fr-BE",{minimumFractionDigits:0,maximumFractionDigits:0});
 const eur2 = n => "€" + n.toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 // -- date helpers (jour "local" établissement, Europe/Brussels) --
 function dayKeyInTZ(d){ // Date -> "YYYY-MM-DD" in Brussels
@@ -252,6 +261,11 @@ function render(agg){
       ${chips?`<div class="chips">${chips}</div>`:''}
     </div>
 
+    <div class="card" id="itemsCard">
+      <div class="sectiontitle"><b>Articles vendus aujourd’hui</b><span id="itemsMeta"></span></div>
+      <div id="itemsBody"><div class="miniload"><span class="s"></span>Chargement du détail…</div></div>
+    </div>
+
     <div class="card">
       <div class="sectiontitle"><b>7 derniers jours</b><span>${eur2(total7)} net · brut ${eur2(brut7)}</span></div>
       <div class="bars">${bars}</div>
@@ -260,7 +274,48 @@ function render(agg){
     <div class="card">
       <div class="rows">${list}</div>
     </div>`;
+
+  paintItems();
 }
+
+// ---- Détail des articles vendus aujourd'hui (via le détail des commandes) ----
+let ITEMS = null; // {day, list:[[label,{qty,amount}]], totalQty}
+
+function paintItems(){
+  const body=$("#itemsBody"), meta=$("#itemsMeta");
+  if(!body) return;
+  if(!ITEMS || ITEMS.day!==todayKey()) return; // laisse l'état "Chargement…"
+  if(!ITEMS.list.length){ body.innerHTML='<div class="miniload">Aucun article vendu aujourd’hui</div>'; if(meta) meta.textContent=""; return; }
+  if(meta) meta.textContent = `${ITEMS.totalQty} article${ITEMS.totalQty>1?'s':''}`;
+  body.innerHTML = ITEMS.list.map(([L,v])=>{
+    const amt = v.amount ? eur2(v.amount) : '<span class="g">gratuit</span>';
+    return `<div class="irow"><span class="iq">${v.qty}×</span><span class="il">${esc(L)}</span><span class="ia">${amt}</span></div>`;
+  }).join("");
+}
+
+async function fillTodayItems(rows){
+  const today=todayKey();
+  const ids=[...new Set(rows
+    .filter(s=>s.created_at.slice(0,10)===today && (s.origin_type||"").endsWith("Order") && s.origin_id)
+    .map(s=>s.origin_id))];
+  const meta=$("#itemsMeta"), body=$("#itemsBody");
+  if(!ids.length){ ITEMS={day:today,list:[],totalQty:0}; saveItemsCache(); paintItems(); return; }
+  const items=[];
+  for(let i=0;i<ids.length;i+=8){
+    const batch=ids.slice(i,i+8);
+    const res=await Promise.allSettled(batch.map(id=>apiGet("/orders/"+id)));
+    for(const r of res){ if(r.status==="fulfilled"){ const o=r.value.data||r.value; for(const it of (o.items||[])) items.push(it); } }
+    if(meta) meta.textContent=`${Math.min(i+8,ids.length)}/${ids.length} commandes…`;
+  }
+  const by={};
+  for(const it of items){ const L=it.label||"(sans nom)"; if(!by[L]) by[L]={qty:0,amount:0}; by[L].qty+=(Number(it.qty)||0); by[L].amount+=(Number(it.amount)||0); }
+  const list=Object.entries(by).sort((a,b)=> b[1].qty-a[1].qty || Math.abs(b[1].amount)-Math.abs(a[1].amount));
+  const totalQty=list.reduce((s,[,v])=>s+v.qty,0);
+  ITEMS={day:today,list,totalQty}; saveItemsCache(); paintItems();
+}
+
+function saveItemsCache(){ try{ localStorage.setItem("qw_items_v1", JSON.stringify(ITEMS)); }catch(e){} }
+function loadItemsCache(){ try{ return JSON.parse(localStorage.getItem("qw_items_v1")); }catch(e){ return null; } }
 
 function saveCache(agg){ try{ localStorage.setItem(LS_CACHE, JSON.stringify({t:Date.now(),agg})); }catch(e){} }
 function loadCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch(e){ return null; } }
@@ -282,6 +337,7 @@ async function refresh(){
     const rows = await fetchRecentSales();
     const agg = aggregate(rows);
     render(agg); saveCache(agg); setUpdated(Date.now(), true);
+    fillTodayItems(rows).catch(()=>{ const b=$("#itemsBody"); if(b) b.innerHTML='<div class="miniload">Détail des articles indisponible</div>'; });
   }catch(e){
     if(e.auth){ needToken(); }
     else{
@@ -310,6 +366,7 @@ $("#foot").innerHTML="Données Qweekle en direct · l'appareil garde le token en
 
 // boot
 (function(){
+  ITEMS=loadItemsCache();
   const cached=loadCache();
   if(cached){ render(cached.agg); setUpdated(cached.t,false); }
   if(!getToken()){ needToken(); }
