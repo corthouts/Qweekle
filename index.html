@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Ventes du jour — Qweekle</title>
+<style>
+  :root{
+    --bg:#f1f5f9; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --accent:#7c3aed; --accent2:#22c55e; --pos:#7c3aed; --front:#0ea5e9; --web:#f59e0b; --other:#64748b;
+    --shadow:0 1px 3px rgba(15,23,42,.08),0 8px 24px rgba(15,23,42,.06);
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0b1120; --card:#111a2e; --ink:#f1f5f9; --muted:#94a3b8; --line:#1e293b;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35); }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink);
+    padding:calc(env(safe-area-inset-top) + 12px) 14px calc(env(safe-area-inset-bottom) + 28px);
+    max-width:520px; margin:0 auto; -webkit-font-smoothing:antialiased;
+  }
+  header{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:4px 2px 14px}
+  .brand{display:flex; flex-direction:column; line-height:1.1}
+  .brand b{font-size:1.05rem; letter-spacing:-.01em}
+  .brand span{font-size:.72rem; color:var(--muted); margin-top:2px}
+  .iconbtn{border:none; background:var(--card); color:var(--ink); width:40px; height:40px; border-radius:12px;
+    box-shadow:var(--shadow); font-size:1.05rem; cursor:pointer; display:grid; place-items:center}
+  .iconbtn:active{transform:scale(.94)}
+  .card{background:var(--card); border-radius:18px; box-shadow:var(--shadow); padding:18px; margin-bottom:14px}
+  .hero .lbl{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:600}
+  .hero .amount{font-size:3.1rem; font-weight:800; letter-spacing:-.03em; margin:6px 0 2px; line-height:1}
+  .hero .sub{color:var(--muted); font-size:.9rem}
+  .metrics{display:flex; gap:10px; margin-top:16px}
+  .metric{flex:1; background:var(--bg); border-radius:14px; padding:12px 10px; text-align:center}
+  .metric b{display:block; font-size:1.2rem; font-weight:800; letter-spacing:-.02em}
+  .metric small{color:var(--muted); font-size:.72rem}
+  .metric.neg b{color:#ef4444}
+  .subline{margin-top:12px; font-size:.8rem; color:var(--muted); text-align:center}
+  .pill{display:inline-block; font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--accent2); background:rgba(34,197,94,.12); border-radius:999px; padding:3px 9px; vertical-align:middle; margin-left:8px}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px}
+  .chip{display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:600;
+    background:var(--bg); border-radius:999px; padding:6px 11px; color:var(--ink)}
+  .dot{width:9px; height:9px; border-radius:50%}
+  .sectiontitle{display:flex; align-items:baseline; justify-content:space-between; margin:2px 2px 10px}
+  .sectiontitle b{font-size:.95rem}
+  .sectiontitle span{font-size:.78rem; color:var(--muted)}
+  .bars{display:flex; align-items:flex-end; gap:7px; height:120px; padding-top:6px}
+  .bar{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end}
+  .bar .col{width:100%; border-radius:7px 7px 3px 3px; background:linear-gradient(180deg,var(--accent),#a78bfa);
+    min-height:4px; transition:height .5s cubic-bezier(.2,.8,.2,1)}
+  .bar.today .col{background:linear-gradient(180deg,var(--accent2),#4ade80)}
+  .bar .d{font-size:.66rem; color:var(--muted); font-weight:600}
+  .bar .v{font-size:.6rem; color:var(--muted)}
+  .bar.today .d{color:var(--accent2)}
+  .rows{margin-top:6px}
+  .row{display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--line)}
+  .row:first-child{border-top:none}
+  .row .day{font-weight:600; font-size:.9rem}
+  .row .day small{display:block; color:var(--muted); font-weight:400; font-size:.72rem}
+  .row .val{text-align:right}
+  .row .val b{font-size:1rem; font-weight:800; letter-spacing:-.01em}
+  .row .val small{display:block; color:var(--muted); font-size:.72rem}
+  .row.is-today{background:linear-gradient(90deg,transparent,rgba(34,197,94,.08)); border-radius:12px; margin:0 -6px; padding:11px 10px; border-top:none}
+  .muted{color:var(--muted)}
+  .center{text-align:center}
+  .foot{text-align:center; color:var(--muted); font-size:.72rem; margin-top:8px; line-height:1.5}
+  .spin{width:34px; height:34px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--accent);
+    animation:sp .8s linear infinite; margin:26px auto}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .err{background:#fef2f2; color:#b91c1c; border-radius:12px; padding:12px 14px; font-size:.85rem; margin-bottom:12px}
+  @media (prefers-color-scheme:dark){.err{background:#3f1d1d; color:#fecaca}}
+  /* token overlay */
+  .overlay{position:fixed; inset:0; background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; padding:20px; z-index:50}
+  .overlay.on{display:flex}
+  .modal{background:var(--card); border-radius:18px; box-shadow:var(--shadow); padding:22px; width:100%; max-width:380px}
+  .modal h2{margin:0 0 6px; font-size:1.1rem}
+  .modal p{margin:0 0 14px; color:var(--muted); font-size:.85rem; line-height:1.5}
+  .modal input{width:100%; border:1px solid var(--line); background:var(--bg); color:var(--ink);
+    border-radius:12px; padding:12px 14px; font-size:.95rem; margin-bottom:12px; font-family:ui-monospace,Menlo,monospace}
+  .btn{width:100%; border:none; background:var(--accent); color:#fff; font-weight:700; font-size:.95rem;
+    border-radius:12px; padding:13px; cursor:pointer}
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:transparent; color:var(--muted); font-weight:600; margin-top:8px}
+  .updated{font-size:.72rem; color:var(--muted); text-align:center; margin:-4px 0 12px}
+  .pulse{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent2); margin-right:5px; vertical-align:middle}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <b id="ventureName">O'minüs</b>
+    <span id="ventureSub">Suivi des ventes</span>
+  </div>
+  <button class="iconbtn" id="refreshBtn" title="Rafraîchir" aria-label="Rafraîchir">⟳</button>
+</header>
+
+<div id="updated" class="updated"></div>
+<div id="content"><div class="spin"></div></div>
+
+<div class="foot" id="foot"></div>
+
+<!-- Token modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2>Connexion Qweekle</h2>
+    <p>Collez votre <b>token API</b> (jeton personnel Qweekle). Il reste stocké uniquement sur cet appareil et n'est jamais partagé.</p>
+    <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="1393|xxxxxxxx…">
+    <button class="btn" id="saveToken">Enregistrer</button>
+    <button class="btn ghost" id="clearToken">Effacer le token de cet appareil</button>
+  </div>
+</div>
+
+<script>
+const API = "https://api.qweekle.io/api";
+const TZ  = "Europe/Brussels";
+const LS_TOKEN = "qw_token";
+const LS_CACHE = "qw_cache_v1";
+const MAX_PAGES = 30;          // garde-fou
+const WINDOW_DAYS = 7;         // fenêtre affichée
+const AUTOREFRESH_MS = 5*60*1000;
+
+const $ = s => document.querySelector(s);
+const eur = n => (n<0? "-":"") + "€" + Math.abs(n).toLocaleString("fr-BE",{minimumFractionDigits:0,maximumFractionDigits:0});
+const eur2 = n => "€" + n.toLocaleString("fr-BE",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+// -- date helpers (jour "local" établissement, Europe/Brussels) --
+function dayKeyInTZ(d){ // Date -> "YYYY-MM-DD" in Brussels
+  const p = new Intl.DateTimeFormat("en-CA",{timeZone:TZ,year:"numeric",month:"2-digit",day:"2-digit"}).format(d);
+  return p; // en-CA gives YYYY-MM-DD
+}
+function todayKey(){ return dayKeyInTZ(new Date()); }
+function keyMinusDays(key,n){ const d=new Date(key+"T12:00:00Z"); d.setUTCDate(d.getUTCDate()-n); return d.toISOString().slice(0,10); }
+function labelFor(key){
+  const d=new Date(key+"T12:00:00Z");
+  const wd=["dim","lun","mar","mer","jeu","ven","sam"][d.getUTCDay()];
+  return {wd, dm:d.getUTCDate()+"/"+(d.getUTCMonth()+1)};
+}
+
+function getToken(){ return localStorage.getItem(LS_TOKEN)||""; }
+function needToken(){ $("#overlay").classList.add("on"); }
+function hideToken(){ $("#overlay").classList.remove("on"); }
+
+async function apiGet(path){
+  const r = await fetch(API+path, {headers:{accept:"application/json",authorization:"Bearer "+getToken()}});
+  if(r.status===401||r.status===403){ const e=new Error("auth"); e.auth=true; throw e; }
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
+}
+
+// Récupère assez de pages (depuis la fin) pour couvrir la fenêtre de jours
+async function fetchRecentSales(){
+  const first = await apiGet("/sales?page=1");
+  const last = first.metadata.lastPage;
+  const cutoff = keyMinusDays(todayKey(), WINDOW_DAYS); // borne basse
+  const rows = [];
+  let p = last, fetched = 0, done = false;
+  while(p>=1 && fetched<MAX_PAGES && !done){
+    // vague de pages en parallèle
+    const wave = [];
+    for(let i=0;i<6 && p-i>=1;i++) wave.push(p-i);
+    const res = await Promise.all(wave.map(pg=>apiGet("/sales?page="+pg)));
+    fetched += wave.length;
+    for(const d of res){ for(const s of d.data) rows.push(s); }
+    // la plus ancienne ligne de la vague la plus basse
+    const lowest = res[res.length-1].data;
+    const oldest = lowest.length? lowest[0].created_at.slice(0,10) : "9999";
+    if(oldest < cutoff) done = true;
+    p -= wave.length;
+  }
+  return rows;
+}
+
+function aggregate(rows){
+  const today = todayKey();
+  const from = keyMinusDays(today, WINDOW_DAYS-1); // 7 jours incluant aujourd'hui
+  const days = {};
+  for(let i=0;i<WINDOW_DAYS;i++){ const k=keyMinusDays(today,i); days[k]={key:k,brut:0,remb:0,rembN:0,net:0,ht:0,n:0,src:{}}; }
+  for(const s of rows){
+    const k = s.created_at.slice(0,10);
+    if(k<from || k>today) continue;
+    const b=days[k]; if(!b) continue;
+    const amt = Number(s.amount)||0;
+    const ht = Number(s.amount_excl_taxes)||0;
+    if(amt<0){ b.remb += -amt; b.rembN += 1; } else { b.brut += amt; b.n += 1; }
+    b.ht += ht;
+    b.net = b.brut - b.remb;
+    const src = s.source||"autre"; b.src[src]=(b.src[src]||0)+amt;
+  }
+  const ordered = Object.values(days).sort((a,b)=>a.key<b.key?-1:1);
+  return {today, days:ordered};
+}
+
+const SRC_LABEL={pos:"Caisse",front:"Accueil/Web",web:"Web",kiosk:"Borne",back:"Back-office",autre:"Autre"};
+const SRC_COLOR={pos:"var(--pos)",front:"var(--front)",web:"var(--web)",kiosk:"var(--web)",back:"var(--other)",autre:"var(--other)"};
+
+function render(agg){
+  const tKey=agg.today;
+  const t = agg.days.find(d=>d.key===tKey) || {brut:0,remb:0,rembN:0,net:0,ht:0,n:0,src:{}};
+  const week = agg.days;
+  const total7 = week.reduce((s,d)=>s+d.net,0);
+  const brut7 = week.reduce((s,d)=>s+d.brut,0);
+  const avg7 = total7/WINDOW_DAYS;
+  const avgTicket = t.n? t.brut/t.n : 0;
+  const max = Math.max(1, ...week.map(d=>d.net));
+
+  // source chips (aujourd'hui)
+  const srcEntries = Object.entries(t.src).filter(([,v])=>v!==0).sort((a,b)=>b[1]-a[1]);
+  const chips = srcEntries.map(([k,v])=>
+    `<span class="chip"><span class="dot" style="background:${SRC_COLOR[k]||'var(--other)'}"></span>${SRC_LABEL[k]||k} ${eur(v)}</span>`).join("");
+
+  const bars = week.map(d=>{
+    const h = Math.round((d.net/max)*100);
+    const lab=labelFor(d.key);
+    return `<div class="bar ${d.key===tKey?'today':''}">
+      <div class="v">${d.net? eur(d.net):''}</div>
+      <div class="col" style="height:${Math.max(4,h)}%"></div>
+      <div class="d">${lab.wd}</div></div>`;
+  }).join("");
+
+  const list = [...week].reverse().map(d=>{
+    const lab=labelFor(d.key);
+    const isT=d.key===tKey;
+    const sub = `Brut ${eur2(d.brut)}${d.rembN?` · ${d.rembN} remb. ${eur2(d.remb)}`:''} · ${d.n} tk`;
+    return `<div class="row ${isT?'is-today':''}">
+      <div class="day">${isT?'Aujourd’hui '+lab.dm:lab.wd+'. '+lab.dm}<small>${sub}</small></div>
+      <div class="val"><b>${eur2(d.net)}</b><small>${eur2(d.ht)} HT</small></div>
+    </div>`;
+  }).join("");
+
+  const vsAvg = avg7>0 ? Math.round((t.net/avg7-1)*100) : 0;
+  const vsTxt = (t.n===0 && t.rembN===0) ? "Pas encore de vente aujourd'hui"
+    : (vsAvg>=0? `+${vsAvg}% vs moyenne 7 j` : `${vsAvg}% vs moyenne 7 j`);
+
+  $("#content").innerHTML = `
+    <div class="card hero">
+      <div class="lbl">Ventes du jour <span class="pill">net encaissé</span></div>
+      <div class="amount">${eur2(t.net)}</div>
+      <div class="sub">${vsTxt}</div>
+      <div class="metrics">
+        <div class="metric"><b>${eur2(t.brut)}</b><small>brut</small></div>
+        <div class="metric neg"><b>${t.rembN?'−'+eur2(t.remb):eur2(0)}</b><small>${t.rembN} rembours.</small></div>
+        <div class="metric"><b>${t.n}</b><small>tickets</small></div>
+      </div>
+      <div class="subline">Ticket moyen ${t.n?eur2(avgTicket):'—'} · ${eur2(t.ht)} HT</div>
+      ${chips?`<div class="chips">${chips}</div>`:''}
+    </div>
+
+    <div class="card">
+      <div class="sectiontitle"><b>7 derniers jours</b><span>${eur2(total7)} net · brut ${eur2(brut7)}</span></div>
+      <div class="bars">${bars}</div>
+    </div>
+
+    <div class="card">
+      <div class="rows">${list}</div>
+    </div>`;
+}
+
+function saveCache(agg){ try{ localStorage.setItem(LS_CACHE, JSON.stringify({t:Date.now(),agg})); }catch(e){} }
+function loadCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch(e){ return null; } }
+
+function setUpdated(ts, live){
+  const d=new Date(ts);
+  const hh=new Intl.DateTimeFormat("fr-BE",{hour:"2-digit",minute:"2-digit",timeZone:TZ}).format(d);
+  $("#updated").innerHTML = `${live?'<span class="pulse"></span>':''}Mis à jour à ${hh}`;
+}
+
+let busy=false;
+async function refresh(){
+  if(busy) return;
+  if(!getToken()){ needToken(); return; }
+  busy=true; $("#refreshBtn").style.opacity=.4;
+  $("#content").querySelector(".err")?.remove();
+  if(!$("#content").querySelector(".card")) $("#content").innerHTML='<div class="spin"></div>';
+  try{
+    const rows = await fetchRecentSales();
+    const agg = aggregate(rows);
+    render(agg); saveCache(agg); setUpdated(Date.now(), true);
+  }catch(e){
+    if(e.auth){ needToken(); }
+    else{
+      const cached=loadCache();
+      if(cached){ render(cached.agg); setUpdated(cached.t,false);
+        $("#content").insertAdjacentHTML("afterbegin",`<div class="err">Hors ligne — données en cache. (${e.message})</div>`); }
+      else $("#content").innerHTML=`<div class="err">Impossible de charger les ventes : ${e.message}</div>`;
+    }
+  }finally{ busy=false; $("#refreshBtn").style.opacity=1; }
+}
+
+async function loadVenture(){
+  try{ const d=await apiGet("/ventures"); const v=d.data&&d.data[0];
+    if(v){ $("#ventureName").textContent=v.name||"Qweekle"; $("#ventureSub").textContent=(v.city||"")+" · Suivi des ventes"; } }catch(e){}
+}
+
+// events
+$("#refreshBtn").onclick=refresh;
+$("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
+  localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(); };
+$("#clearToken").onclick=()=>{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_CACHE); location.reload(); };
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(); });
+setInterval(()=>{ if(!document.hidden) refresh(); }, AUTOREFRESH_MS);
+
+$("#foot").innerHTML="Données Qweekle en direct · l'appareil garde le token en local<br>Aujourd'hui = journée en cours (heure de Bruxelles)";
+
+// boot
+(function(){
+  const cached=loadCache();
+  if(cached){ render(cached.agg); setUpdated(cached.t,false); }
+  if(!getToken()){ needToken(); }
+  else { loadVenture(); refresh(); }
+})();
+</script>
+</body>
+</html>
