@@ -73,14 +73,17 @@
   .pdh b{font-size:.95rem}
   .pdh span{font-size:.72rem; color:var(--muted)}
   .psh{font-size:.7rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:11px 2px 6px}
-  .pcard{display:flex; align-items:center; gap:11px; padding:9px 10px; border-radius:12px; margin-bottom:6px; background:var(--bg)}
+  .pcard{padding:9px 10px; border-radius:12px; margin-bottom:6px; background:var(--bg)}
   .pcard.warn{background:rgba(245,158,11,.14); box-shadow:inset 3px 0 0 var(--web)}
+  .ptop{display:flex; align-items:center; gap:11px}
   .pg{min-width:36px; height:36px; border-radius:9px; background:var(--accent); color:#fff; font-weight:800; display:grid; place-items:center; font-size:.95rem; font-variant-numeric:tabular-nums}
   .pcard.warn .pg{background:var(--web)}
   .pi{flex:1; min-width:0}
   .pi b{font-size:.88rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
   .pi small{font-size:.72rem; color:var(--muted)}
   .ptag{font-size:.62rem; font-weight:800; color:var(--web); text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; align-self:flex-start; margin-top:2px}
+  .pnote{font-size:.77rem; color:var(--muted); line-height:1.4; margin-top:7px; padding-left:47px; white-space:normal}
+  .pnote.client{color:var(--front); font-weight:500}
   .rows{margin-top:6px}
   .row{display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--line)}
   .row:first-child{border-top:none}
@@ -361,12 +364,13 @@ function loadItemsCache(){ try{ return JSON.parse(localStorage.getItem("qw_items
 // ---- Anniversaires des 7 prochains jours ----
 // Source : bookings des formules (pack) — le tri par date n'étant pas monotone, on
 // scanne les dernières pages puis on filtre par créneau côté client. Chaque fête = une
-// commande (order_item.order) : type, invités (qty), créneau, lieu et note privée (note).
-// Les lignes "fantômes" (pack sans commande) partageant le même créneau+lieu qu'une
-// commande sont ignorées ; isolées, elles sont montrées comme "sans commande".
+// commande (order_item.order). On ne garde que les fêtes CONFIRMÉES (acompte payé ou
+// soldé) ; les devis/propositions et les lignes de pack sans commande sont ignorés.
+// On affiche : type, invités (qty), créneau, lieu, la note privée (note) et le message
+// client (front_note). Les fêtes sans note privée sont mises en évidence.
 const PARTY_DAYS = 7;
 const BOOK_TAIL_PAGES = 25;
-let PARTIES = null; // {day, list:[{date,slot,loc,type,guests,note,status,number,orphan}]}
+let PARTIES = null; // {day, list:[{date,slot,loc,type,guests,note,frontNote,status,number}]}
 
 function partyNoteEmpty(p){ return !p.note || !String(p.note).trim(); }
 
@@ -393,8 +397,11 @@ function renderParties(){
       html+=`<div class="psh">${s} · ${sp.reduce((a,p)=>a+p.guests,0)} inv.</div>`;
       for(const p of sp){
         const warn=partyNoteEmpty(p);
-        const sub=`${esc(p.loc)}${p.orphan?' · sans commande':''}${p.status==='proposal'?' · devis':''}`;
-        html+=`<div class="pcard ${warn?'warn':''}"><div class="pg">${p.guests}</div><div class="pi"><b>${esc(p.type)}</b><small>${sub}</small></div>${warn?'<div class="ptag">note vide</div>':''}</div>`;
+        const fn=p.frontNote && String(p.frontNote).trim();
+        let notes="";
+        if(!warn) notes+=`<div class="pnote">📝 ${esc(String(p.note).trim())}</div>`;
+        if(fn)    notes+=`<div class="pnote client">💬 ${esc(fn)}</div>`;
+        html+=`<div class="pcard ${warn?'warn':''}"><div class="ptop"><div class="pg">${p.guests}</div><div class="pi"><b>${esc(p.type)}</b><small>${esc(p.loc)}</small></div>${warn?'<div class="ptag">note vide</div>':''}</div>${notes}</div>`;
       }
     }
     html+=`</div>`;
@@ -418,18 +425,15 @@ async function fetchUpcomingParties(){
   }
   const inWin=bookings.filter(b=>{ const d=((b.agenda&&b.agenda.start_at)||"").slice(0,10); return d>=today && d<=end; });
   const formules=inWin.filter(b=>/formule/i.test((b.activity&&b.activity.label)||""));
-  const slotKey=b=>`${b.agenda.start_at.slice(0,16)}|${(b.agenda.location&&b.agenda.location.label)||b.agenda.location_id}`;
-  const linkedSlots=new Set(formules.filter(b=>b.order_item&&b.order_item.order).map(slotKey));
+  const CONFIRMED=new Set(["partially_paid","sold"]); // acompte payé ou soldé ; on exclut les devis/propositions
   const parties=[]; const seenOrder=new Set();
   for(const b of formules){
     const o=b.order_item&&b.order_item.order;
+    if(!o || !CONFIRMED.has(o.global_status)) continue;   // pas de commande confirmée → ignoré
+    if(seenOrder.has(o.id)) continue; seenOrder.add(o.id);
     const loc=(b.agenda.location&&b.agenda.location.label)||"?";
     const date=b.agenda.start_at.slice(0,10), slot=b.agenda.start_at.slice(11,16);
-    if(o){ if(seenOrder.has(o.id)) continue; seenOrder.add(o.id);
-      parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:o.note,status:o.global_status,number:o.number,orphan:false});
-    } else if(!linkedSlots.has(slotKey(b))){
-      parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:null,status:"?",number:null,orphan:true});
-    }
+    parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:o.note,frontNote:o.front_note,status:o.global_status,number:o.number});
   }
   parties.sort((a,b)=> (a.date+a.slot)<(b.date+b.slot)?-1:1);
   PARTIES={day:today,list:parties}; savePartyCache(); renderParties();
@@ -480,7 +484,7 @@ async function loadVenture(){
 $("#refreshBtn").onclick=()=>refresh(true);
 $("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
   localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(true); };
-$("#clearToken").onclick=()=>{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_CACHE); localStorage.removeItem("qw_items_v1"); localStorage.removeItem("qw_parties_v1"); location.reload(); };
+$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(true); });
 setInterval(()=>{ if(!document.hidden) refresh(false); }, AUTOREFRESH_MS);
 
