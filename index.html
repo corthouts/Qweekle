@@ -439,8 +439,9 @@ async function fetchUpcomingParties(){
   PARTIES={day:today,list:parties}; savePartyCache(); renderParties();
 }
 
-function savePartyCache(){ try{ localStorage.setItem("qw_parties_v1", JSON.stringify(PARTIES)); }catch(e){} }
-function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v1")); }catch(e){ return null; } }
+// v2 : clé changée pour invalider l'ancien cache non filtré (devis inclus par erreur)
+function savePartyCache(){ try{ localStorage.setItem("qw_parties_v2", JSON.stringify(PARTIES)); localStorage.removeItem("qw_parties_v1"); }catch(e){} }
+function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v2")); }catch(e){ return null; } }
 
 function saveCache(agg){ try{ localStorage.setItem(LS_CACHE, JSON.stringify({t:Date.now(),agg})); }catch(e){} }
 function loadCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch(e){ return null; } }
@@ -484,7 +485,7 @@ async function loadVenture(){
 $("#refreshBtn").onclick=()=>refresh(true);
 $("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
   localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(true); };
-$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
+$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1","qw_parties_v2"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(true); });
 setInterval(()=>{ if(!document.hidden) refresh(false); }, AUTOREFRESH_MS);
 
