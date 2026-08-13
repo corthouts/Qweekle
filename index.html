@@ -46,9 +46,9 @@
   .chip{display:inline-flex; align-items:center; gap:6px; font-size:.78rem; font-weight:600;
     background:var(--bg); border-radius:999px; padding:6px 11px; color:var(--ink)}
   .dot{width:9px; height:9px; border-radius:50%}
-  .sectiontitle{display:flex; align-items:baseline; justify-content:space-between; margin:2px 2px 10px}
+  .sectiontitle{display:flex; align-items:baseline; justify-content:space-between; margin:2px 2px 10px; gap:8px}
   .sectiontitle b{font-size:.95rem}
-  .sectiontitle span{font-size:.78rem; color:var(--muted)}
+  .sectiontitle span{font-size:.78rem; color:var(--muted); text-align:right}
   .bars{display:flex; align-items:flex-end; gap:7px; height:120px; padding-top:6px}
   .bar{flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end}
   .bar .col{width:100%; border-radius:7px 7px 3px 3px; background:linear-gradient(180deg,var(--accent),#a78bfa);
@@ -67,6 +67,20 @@
   .irow.dep .iq{color:var(--front)}
   .miniload{color:var(--muted); font-size:.85rem; padding:10px 2px; display:flex; align-items:center; gap:8px}
   .miniload .s{width:15px; height:15px; border-radius:50%; border:2px solid var(--line); border-top-color:var(--accent); animation:sp .8s linear infinite}
+  /* anniversaires à venir */
+  .pday + .pday{margin-top:16px}
+  .pdh{display:flex; justify-content:space-between; align-items:baseline; padding:0 2px 6px; border-bottom:2px solid var(--line)}
+  .pdh b{font-size:.95rem}
+  .pdh span{font-size:.72rem; color:var(--muted)}
+  .psh{font-size:.7rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:11px 2px 6px}
+  .pcard{display:flex; align-items:center; gap:11px; padding:9px 10px; border-radius:12px; margin-bottom:6px; background:var(--bg)}
+  .pcard.warn{background:rgba(245,158,11,.14); box-shadow:inset 3px 0 0 var(--web)}
+  .pg{min-width:36px; height:36px; border-radius:9px; background:var(--accent); color:#fff; font-weight:800; display:grid; place-items:center; font-size:.95rem; font-variant-numeric:tabular-nums}
+  .pcard.warn .pg{background:var(--web)}
+  .pi{flex:1; min-width:0}
+  .pi b{font-size:.88rem; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .pi small{font-size:.72rem; color:var(--muted)}
+  .ptag{font-size:.62rem; font-weight:800; color:var(--web); text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; align-self:flex-start; margin-top:2px}
   .rows{margin-top:6px}
   .row{display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--line)}
   .row:first-child{border-top:none}
@@ -275,9 +289,15 @@ function render(agg){
 
     <div class="card">
       <div class="rows">${list}</div>
+    </div>
+
+    <div class="card" id="partyCard">
+      <div class="sectiontitle"><b>Anniversaires · 7 prochains jours</b><span id="partyMeta"></span></div>
+      <div id="partyBody"><div class="miniload"><span class="s"></span>Chargement du planning…</div></div>
     </div>`;
 
   paintItems();
+  renderParties();
 }
 
 // ---- Détail des articles réellement vendus aujourd'hui ----
@@ -338,6 +358,86 @@ async function fillTodayItems(rows){
 function saveItemsCache(){ try{ localStorage.setItem("qw_items_v1", JSON.stringify(ITEMS)); }catch(e){} }
 function loadItemsCache(){ try{ return JSON.parse(localStorage.getItem("qw_items_v1")); }catch(e){ return null; } }
 
+// ---- Anniversaires des 7 prochains jours ----
+// Source : bookings des formules (pack) — le tri par date n'étant pas monotone, on
+// scanne les dernières pages puis on filtre par créneau côté client. Chaque fête = une
+// commande (order_item.order) : type, invités (qty), créneau, lieu et note privée (note).
+// Les lignes "fantômes" (pack sans commande) partageant le même créneau+lieu qu'une
+// commande sont ignorées ; isolées, elles sont montrées comme "sans commande".
+const PARTY_DAYS = 7;
+const BOOK_TAIL_PAGES = 25;
+let PARTIES = null; // {day, list:[{date,slot,loc,type,guests,note,status,number,orphan}]}
+
+function partyNoteEmpty(p){ return !p.note || !String(p.note).trim(); }
+
+function renderParties(){
+  const body=$("#partyBody"), meta=$("#partyMeta");
+  if(!body) return;
+  if(!PARTIES || PARTIES.day!==todayKey()) return; // garde "Chargement…"
+  const list=PARTIES.list;
+  if(!list.length){ body.innerHTML='<div class="miniload">Aucun anniversaire prévu sur 7 jours</div>'; if(meta) meta.textContent=""; return; }
+  const flagged=list.filter(partyNoteEmpty).length;
+  if(meta) meta.innerHTML = `${list.length} fête${list.length>1?'s':''}${flagged?` · <b style="color:var(--web)">${flagged} sans note</b>`:''}`;
+  const today=todayKey(), WD=["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
+  let html="";
+  for(let i=0;i<PARTY_DAYS;i++){
+    const day=keyMinusDays(today,-i);
+    const dayP=list.filter(p=>p.date===day);
+    if(!dayP.length) continue;
+    const dd=new Date(day+"T12:00:00Z");
+    const totG=dayP.reduce((s,p)=>s+p.guests,0);
+    html+=`<div class="pday"><div class="pdh"><b>${WD[dd.getUTCDay()]} ${dd.getUTCDate()}/${dd.getUTCMonth()+1}</b><span>${dayP.length} fête${dayP.length>1?'s':''} · ${totG} invités</span></div>`;
+    const slots=[...new Set(dayP.map(p=>p.slot))].sort();
+    for(const s of slots){
+      const sp=dayP.filter(p=>p.slot===s).sort((a,b)=>b.guests-a.guests);
+      html+=`<div class="psh">${s} · ${sp.reduce((a,p)=>a+p.guests,0)} inv.</div>`;
+      for(const p of sp){
+        const warn=partyNoteEmpty(p);
+        const sub=`${esc(p.loc)}${p.orphan?' · sans commande':''}${p.status==='proposal'?' · devis':''}`;
+        html+=`<div class="pcard ${warn?'warn':''}"><div class="pg">${p.guests}</div><div class="pi"><b>${esc(p.type)}</b><small>${sub}</small></div>${warn?'<div class="ptag">note vide</div>':''}</div>`;
+      }
+    }
+    html+=`</div>`;
+  }
+  body.innerHTML=html;
+}
+
+async function fetchUpcomingParties(){
+  const today=todayKey();
+  const end=keyMinusDays(today, -(PARTY_DAYS-1)); // today + 6 jours
+  const meta=$("#partyMeta");
+  const first=await apiGet("/bookings?sort=agendas.start_at&page=1");
+  const last=first.metadata.lastPage;
+  const pages=[]; for(let p=last;p>last-BOOK_TAIL_PAGES && p>=1;p--) pages.push(p);
+  const bookings=[]; const seen=new Set();
+  for(let i=0;i<pages.length;i+=6){
+    const batch=pages.slice(i,i+6);
+    const res=await Promise.allSettled(batch.map(p=>apiGet("/bookings?sort=agendas.start_at&page="+p)));
+    for(const r of res){ if(r.status==="fulfilled"){ for(const b of (r.value.data||[])){ if(!seen.has(b.id)){ seen.add(b.id); bookings.push(b); } } } }
+    if(meta) meta.textContent="chargement…";
+  }
+  const inWin=bookings.filter(b=>{ const d=((b.agenda&&b.agenda.start_at)||"").slice(0,10); return d>=today && d<=end; });
+  const formules=inWin.filter(b=>/formule/i.test((b.activity&&b.activity.label)||""));
+  const slotKey=b=>`${b.agenda.start_at.slice(0,16)}|${(b.agenda.location&&b.agenda.location.label)||b.agenda.location_id}`;
+  const linkedSlots=new Set(formules.filter(b=>b.order_item&&b.order_item.order).map(slotKey));
+  const parties=[]; const seenOrder=new Set();
+  for(const b of formules){
+    const o=b.order_item&&b.order_item.order;
+    const loc=(b.agenda.location&&b.agenda.location.label)||"?";
+    const date=b.agenda.start_at.slice(0,10), slot=b.agenda.start_at.slice(11,16);
+    if(o){ if(seenOrder.has(o.id)) continue; seenOrder.add(o.id);
+      parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:o.note,status:o.global_status,number:o.number,orphan:false});
+    } else if(!linkedSlots.has(slotKey(b))){
+      parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:null,status:"?",number:null,orphan:true});
+    }
+  }
+  parties.sort((a,b)=> (a.date+a.slot)<(b.date+b.slot)?-1:1);
+  PARTIES={day:today,list:parties}; savePartyCache(); renderParties();
+}
+
+function savePartyCache(){ try{ localStorage.setItem("qw_parties_v1", JSON.stringify(PARTIES)); }catch(e){} }
+function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v1")); }catch(e){ return null; } }
+
 function saveCache(agg){ try{ localStorage.setItem(LS_CACHE, JSON.stringify({t:Date.now(),agg})); }catch(e){} }
 function loadCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch(e){ return null; } }
 
@@ -348,7 +448,7 @@ function setUpdated(ts, live){
 }
 
 let busy=false;
-async function refresh(){
+async function refresh(full=true){
   if(busy) return;
   if(!getToken()){ needToken(); return; }
   busy=true; $("#refreshBtn").style.opacity=.4;
@@ -359,6 +459,7 @@ async function refresh(){
     const agg = aggregate(rows);
     render(agg); saveCache(agg); setUpdated(Date.now(), true);
     fillTodayItems(rows).catch(()=>{ const b=$("#itemsBody"); if(b) b.innerHTML='<div class="miniload">Détail des articles indisponible</div>'; });
+    if(full) fetchUpcomingParties().catch(()=>{ const b=$("#partyBody"); if(b) b.innerHTML='<div class="miniload">Planning indisponible</div>'; });
   }catch(e){
     if(e.auth){ needToken(); }
     else{
@@ -376,22 +477,23 @@ async function loadVenture(){
 }
 
 // events
-$("#refreshBtn").onclick=refresh;
+$("#refreshBtn").onclick=()=>refresh(true);
 $("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
-  localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(); };
-$("#clearToken").onclick=()=>{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_CACHE); location.reload(); };
-document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(); });
-setInterval(()=>{ if(!document.hidden) refresh(); }, AUTOREFRESH_MS);
+  localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(true); };
+$("#clearToken").onclick=()=>{ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_CACHE); localStorage.removeItem("qw_items_v1"); localStorage.removeItem("qw_parties_v1"); location.reload(); };
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(true); });
+setInterval(()=>{ if(!document.hidden) refresh(false); }, AUTOREFRESH_MS);
 
 $("#foot").innerHTML="Données Qweekle en direct · l'appareil garde le token en local<br>Aujourd'hui = journée en cours (heure de Bruxelles)";
 
 // boot
 (function(){
   ITEMS=loadItemsCache();
+  PARTIES=loadPartyCache();
   const cached=loadCache();
   if(cached){ render(cached.agg); setUpdated(cached.t,false); }
   if(!getToken()){ needToken(); }
-  else { loadVenture(); refresh(); }
+  else { loadVenture(); refresh(true); }
 })();
 </script>
 </body>
