@@ -73,7 +73,8 @@
   .pdh b{font-size:.95rem}
   .pdh span{font-size:.72rem; color:var(--muted)}
   .psh{font-size:.7rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:11px 2px 6px}
-  .pcard{padding:9px 10px; border-radius:12px; margin-bottom:6px; background:var(--bg)}
+  .pcard{padding:9px 10px; border-radius:12px; margin-bottom:6px; background:var(--bg); cursor:pointer}
+  .pcard:active{transform:scale(.99)}
   .pcard.warn{background:rgba(245,158,11,.14); box-shadow:inset 3px 0 0 var(--web)}
   .ptop{display:flex; align-items:center; gap:11px}
   .pg{min-width:36px; height:36px; border-radius:9px; background:var(--accent); color:#fff; font-weight:800; display:grid; place-items:center; font-size:.95rem; font-variant-numeric:tabular-nums}
@@ -116,6 +117,16 @@
   .btn.ghost{background:transparent; color:var(--muted); font-weight:600; margin-top:8px}
   .updated{font-size:.72rem; color:var(--muted); text-align:center; margin:-4px 0 12px}
   .pulse{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent2); margin-right:5px; vertical-align:middle}
+  /* pop-up fiche client */
+  .cli-h{font-size:.72rem; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; font-weight:700}
+  .cli-name{font-size:1.3rem; font-weight:800; letter-spacing:-.02em; margin:3px 0 1px}
+  .cli-sub{color:var(--muted); font-size:.82rem; margin-bottom:16px}
+  .cli-row{display:flex; align-items:center; gap:12px; padding:11px 12px; border-radius:12px; background:var(--bg); margin-bottom:8px; text-decoration:none; color:var(--ink)}
+  .cli-row:active{transform:scale(.98)}
+  .cli-row .ic{font-size:1.15rem; width:22px; text-align:center}
+  .cli-row .lbl{font-size:.68rem; color:var(--muted); display:block}
+  .cli-row .val{font-weight:600; font-size:.95rem; word-break:break-word}
+  .cli-empty{color:var(--muted); font-size:.9rem; padding:10px 0 6px}
 </style>
 </head>
 <body>
@@ -141,6 +152,14 @@
     <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="1393|xxxxxxxx…">
     <button class="btn" id="saveToken">Enregistrer</button>
     <button class="btn ghost" id="clearToken">Effacer le token de cet appareil</button>
+  </div>
+</div>
+
+<!-- Pop-up fiche client -->
+<div class="overlay" id="clientOverlay">
+  <div class="modal">
+    <div id="clientBody"></div>
+    <button class="btn ghost" id="clientClose">Fermer</button>
   </div>
 </div>
 
@@ -367,10 +386,10 @@ function loadItemsCache(){ try{ return JSON.parse(localStorage.getItem("qw_items
 // commande (order_item.order). On ne garde que les fêtes CONFIRMÉES (acompte payé ou
 // soldé) ; les devis/propositions et les lignes de pack sans commande sont ignorés.
 // On affiche : type, invités (qty), créneau, lieu, la note privée (note) et le message
-// client (front_note). Les fêtes sans note privée sont mises en évidence.
+// client (front_note). Les fêtes sans note privée sont mises en évidence. Clic = fiche client.
 const PARTY_DAYS = 7;
 const BOOK_TAIL_PAGES = 25;
-let PARTIES = null; // {day, list:[{date,slot,loc,type,guests,note,frontNote,status,number}]}
+let PARTIES = null; // {day, list:[{date,slot,loc,type,guests,note,frontNote,status,number,clientId}]}
 
 function partyNoteEmpty(p){ return !p.note || !String(p.note).trim(); }
 
@@ -401,7 +420,7 @@ function renderParties(){
         let notes="";
         if(!warn) notes+=`<div class="pnote">📝 ${esc(String(p.note).trim())}</div>`;
         if(fn)    notes+=`<div class="pnote client">💬 ${esc(fn)}</div>`;
-        html+=`<div class="pcard ${warn?'warn':''}"><div class="ptop"><div class="pg">${p.guests}</div><div class="pi"><b>${esc(p.type)}</b><small>${esc(p.loc)}</small></div>${warn?'<div class="ptag">note vide</div>':''}</div>${notes}</div>`;
+        html+=`<div class="pcard ${warn?'warn':''}" data-i="${list.indexOf(p)}"><div class="ptop"><div class="pg">${p.guests}</div><div class="pi"><b>${esc(p.type)}</b><small>${esc(p.loc)}</small></div>${warn?'<div class="ptag">note vide</div>':''}</div>${notes}</div>`;
       }
     }
     html+=`</div>`;
@@ -433,15 +452,44 @@ async function fetchUpcomingParties(){
     if(seenOrder.has(o.id)) continue; seenOrder.add(o.id);
     const loc=(b.agenda.location&&b.agenda.location.label)||"?";
     const date=b.agenda.start_at.slice(0,10), slot=b.agenda.start_at.slice(11,16);
-    parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:o.note,frontNote:o.front_note,status:o.global_status,number:o.number});
+    const clientId=o.client_id||b.client_id||null;
+    parties.push({date,slot,loc,type:b.activity.label,guests:Number(b.qty)||0,note:o.note,frontNote:o.front_note,status:o.global_status,number:o.number,clientId});
   }
   parties.sort((a,b)=> (a.date+a.slot)<(b.date+b.slot)?-1:1);
   PARTIES={day:today,list:parties}; savePartyCache(); renderParties();
 }
 
-// v2 : clé changée pour invalider l'ancien cache non filtré (devis inclus par erreur)
-function savePartyCache(){ try{ localStorage.setItem("qw_parties_v2", JSON.stringify(PARTIES)); localStorage.removeItem("qw_parties_v1"); }catch(e){} }
-function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v2")); }catch(e){ return null; } }
+// v3 : ajout du client_id par fête (pop-up fiche client)
+function savePartyCache(){ try{ localStorage.setItem("qw_parties_v3", JSON.stringify(PARTIES)); ["qw_parties_v1","qw_parties_v2"].forEach(k=>localStorage.removeItem(k)); }catch(e){} }
+function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v3")); }catch(e){ return null; } }
+
+// ---- Pop-up fiche client (au clic sur une fête) ----
+const CLIENTS = {}; // cache mémoire des fiches déjà chargées
+
+function whenLabel(p){ return `${p.date.slice(8,10)}/${p.date.slice(5,7)} · ${p.slot} · ${p.guests} inv. · ${esc(p.loc)}`; }
+function closeClient(){ $("#clientOverlay").classList.remove("on"); }
+
+async function openClient(p){
+  const ov=$("#clientOverlay"), body=$("#clientBody");
+  const head=`<div class="cli-h">${esc(p.type)}</div><div class="cli-sub">${whenLabel(p)}</div>`;
+  body.innerHTML=head+'<div class="miniload"><span class="s"></span>Chargement de la fiche…</div>';
+  ov.classList.add("on");
+  if(!p.clientId){ body.innerHTML=head+'<div class="cli-empty">Aucune fiche client liée à cette réservation.</div>'; return; }
+  try{
+    let c=CLIENTS[p.clientId];
+    if(!c){ const d=await apiGet("/clients/"+p.clientId); c=d.data||d; CLIENTS[p.clientId]=c; }
+    const name=[c.firstname,c.lastname].filter(Boolean).join(" ").trim() || c.society || "Client";
+    const rows=[];
+    if(c.society) rows.push(`<div class="cli-row"><span class="ic">🏢</span><span><span class="lbl">Société</span><span class="val">${esc(c.society)}</span></span></div>`);
+    if(c.phone)  rows.push(`<a class="cli-row" href="tel:${esc(String(c.phone).replace(/\s/g,''))}"><span class="ic">📞</span><span><span class="lbl">Téléphone</span><span class="val">${esc(c.phone)}</span></span></a>`);
+    if(c.phone2) rows.push(`<a class="cli-row" href="tel:${esc(String(c.phone2).replace(/\s/g,''))}"><span class="ic">📱</span><span><span class="lbl">Téléphone 2</span><span class="val">${esc(c.phone2)}</span></span></a>`);
+    if(c.email)  rows.push(`<a class="cli-row" href="mailto:${esc(c.email)}"><span class="ic">✉️</span><span><span class="lbl">Email</span><span class="val">${esc(c.email)}</span></span></a>`);
+    if(!rows.length) rows.push('<div class="cli-empty">Fiche sans téléphone ni email.</div>');
+    body.innerHTML=`<div class="cli-h">${esc(p.type)}</div><div class="cli-name">${esc(name)}</div><div class="cli-sub">${whenLabel(p)}</div>${rows.join("")}`;
+  }catch(e){
+    body.innerHTML=head+`<div class="cli-empty">Impossible de charger la fiche client (${esc(e.message)}).</div>`;
+  }
+}
 
 function saveCache(agg){ try{ localStorage.setItem(LS_CACHE, JSON.stringify({t:Date.now(),agg})); }catch(e){} }
 function loadCache(){ try{ return JSON.parse(localStorage.getItem(LS_CACHE)); }catch(e){ return null; } }
@@ -485,7 +533,17 @@ async function loadVenture(){
 $("#refreshBtn").onclick=()=>refresh(true);
 $("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
   localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(true); };
-$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1","qw_parties_v2"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
+$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1","qw_parties_v2","qw_parties_v3"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
+
+// clic sur une fête -> pop-up fiche client (délégué sur #content, stable entre les rendus)
+$("#content").addEventListener("click", e=>{
+  const card=e.target.closest(".pcard"); if(!card) return;
+  const i=+card.dataset.i;
+  if(PARTIES && PARTIES.list && PARTIES.list[i]) openClient(PARTIES.list[i]);
+});
+$("#clientClose").onclick=closeClient;
+$("#clientOverlay").addEventListener("click", e=>{ if(e.target===$("#clientOverlay")) closeClient(); });
+
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) refresh(true); });
 setInterval(()=>{ if(!document.hidden) refresh(false); }, AUTOREFRESH_MS);
 
