@@ -85,6 +85,16 @@
   .ptag{font-size:.62rem; font-weight:800; color:var(--web); text-transform:uppercase; letter-spacing:.03em; white-space:nowrap; align-self:flex-start; margin-top:2px}
   .pnote{font-size:.77rem; color:var(--muted); line-height:1.4; margin-top:7px; padding-left:47px; white-space:normal}
   .pnote.client{color:var(--front); font-weight:500}
+  /* remplissage de la journée */
+  .fillbig{font-size:2.3rem; font-weight:800; letter-spacing:-.03em; line-height:1; margin:8px 0 2px}
+  .fillbig small{font-size:.95rem; font-weight:600; color:var(--muted)}
+  .fillsub{color:var(--muted); font-size:.83rem; margin-bottom:2px; min-height:1.1em}
+  .fillsub .wave{color:var(--web); font-weight:700}
+  .fillchart{width:100%; height:180px; display:block; margin-top:6px}
+  .fillchart text{font-family:inherit}
+  .filllegend{display:flex; gap:16px; margin-top:8px; font-size:.72rem; color:var(--muted)}
+  .filllegend i{display:inline-block; width:16px; height:0; border-top:3px solid var(--accent); vertical-align:middle; margin-right:5px; border-radius:2px}
+  .filllegend i.proj{border-top:3px dashed var(--muted)}
   .rows{margin-top:6px}
   .row{display:flex; align-items:center; justify-content:space-between; padding:11px 4px; border-top:1px solid var(--line)}
   .row:first-child{border-top:none}
@@ -299,6 +309,14 @@ function render(agg){
       ${chips?`<div class="chips">${chips}</div>`:''}
     </div>
 
+    <div class="card" id="fillCard">
+      <div class="sectiontitle"><b>Remplissage de la journée</b><span id="fillMeta"></span></div>
+      <div class="fillbig" id="fillHero"><small>Chargement…</small></div>
+      <div class="fillsub" id="fillSub"></div>
+      <svg class="fillchart" id="fillChart" viewBox="0 0 520 180" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div class="filllegend"><span><i></i>Déjà admis</span><span><i class="proj"></i>Réservé à venir</span></div>
+    </div>
+
     <div class="card" id="itemsCard">
       <div class="sectiontitle"><b>Articles vendus aujourd’hui</b><span id="itemsMeta"></span></div>
       <div id="itemsBody"><div class="miniload"><span class="s"></span>Chargement du détail…</div></div>
@@ -320,6 +338,7 @@ function render(agg){
 
   paintItems();
   renderParties();
+  renderFill();
 }
 
 // ---- Détail des articles réellement vendus aujourd'hui ----
@@ -353,8 +372,9 @@ async function fillTodayItems(rows){
   for(const s of todaySales){ paidByOrder[s.origin_id]=(paidByOrder[s.origin_id]||0)+(Number(s.amount)||0); }
   const ids=Object.keys(paidByOrder);
   const meta=$("#itemsMeta");
-  if(!ids.length){ ITEMS={day:today,list:[],totalQty:0,depN:0,depAmt:0}; saveItemsCache(); paintItems(); return; }
+  if(!ids.length){ ITEMS={day:today,list:[],totalQty:0,depN:0,depAmt:0}; saveItemsCache(); paintItems(); setFillWalk({}); return; }
   const by={}; let depN=0, depAmt=0;
+  const walk={}; const ENTRY=/entr[ée]e/i;   // entrées individuelles par heure (remplissage)
   for(let i=0;i<ids.length;i+=8){
     const batch=ids.slice(i,i+8);
     const res=await Promise.allSettled(batch.map(id=>apiGet("/orders/"+id)));
@@ -362,11 +382,13 @@ async function fillTodayItems(rows){
       if(res[j].status!=="fulfilled") continue;
       const o=res[j].value.data||res[j].value, id=batch[j];
       if(o.global_status==="sold"){
+        const hh=+String(o.created_at||"").slice(11,13);
         for(const it of (o.items||[])){
           if(/acompte/i.test(it.label||"")) continue;          // exclut les lignes internes d'acompte
           const L=it.label||"(sans nom)";
           if(!by[L]) by[L]={qty:0,amount:0};
           by[L].qty+=(Number(it.qty)||0); by[L].amount+=(Number(it.amount)||0);
+          if(ENTRY.test(L) && hh>=0) walk[hh]=(walk[hh]||0)+(Number(it.qty)||0);
         }
       } else if((paidByOrder[id]||0)>0){ depN++; depAmt+=paidByOrder[id]; } // acompte : seulement l'encaissé
     }
@@ -375,6 +397,7 @@ async function fillTodayItems(rows){
   const list=Object.entries(by).sort((a,b)=> b[1].qty-a[1].qty || Math.abs(b[1].amount)-Math.abs(a[1].amount));
   const totalQty=list.reduce((s,[,v])=>s+v.qty,0);
   ITEMS={day:today,list,totalQty,depN,depAmt}; saveItemsCache(); paintItems();
+  setFillWalk(walk);
 }
 
 function saveItemsCache(){ try{ localStorage.setItem("qw_items_v1", JSON.stringify(ITEMS)); }catch(e){} }
@@ -457,11 +480,121 @@ async function fetchUpcomingParties(){
   }
   parties.sort((a,b)=> (a.date+a.slot)<(b.date+b.slot)?-1:1);
   PARTIES={day:today,list:parties}; savePartyCache(); renderParties();
+
+  // Vagues d'arrivées du jour (anniversaires confirmés + groupes) -> graphique de remplissage
+  const todayB=bookings.filter(b=>((b.agenda&&b.agenda.start_at)||"").slice(0,10)===today
+    && /formule|groupe/i.test((b.activity&&b.activity.label)||""));
+  const partyQty={}, groupQty={};   // fêtes dédupliquées par commande ; groupes par créneau+lieu (max)
+  for(const b of todayB){
+    const o=b.order_item&&b.order_item.order;
+    const h=+b.agenda.start_at.slice(11,13), q=Number(b.qty)||0;
+    const loc=(b.agenda.location&&b.agenda.location.label)||b.agenda.location_id||"?";
+    if(o){ if(!CONFIRMED.has(o.global_status)) continue; if(!partyQty[o.id]||q>partyQty[o.id].qty) partyQty[o.id]={hour:h,qty:q}; }
+    else { const k=h+"|"+loc; if(!groupQty[k]||q>groupQty[k].qty) groupQty[k]={hour:h,qty:q}; }
+  }
+  const waveMap={};
+  [...Object.values(partyQty),...Object.values(groupQty)].forEach(w=>{ waveMap[w.hour]=(waveMap[w.hour]||0)+w.qty; });
+  const waves=Object.entries(waveMap).map(([h,q])=>({hour:+h,qty:q})).sort((a,b)=>a.hour-b.hour);
+  setFillWaves(waves);
 }
 
 // v3 : ajout du client_id par fête (pop-up fiche client)
 function savePartyCache(){ try{ localStorage.setItem("qw_parties_v3", JSON.stringify(PARTIES)); ["qw_parties_v1","qw_parties_v2"].forEach(k=>localStorage.removeItem(k)); }catch(e){} }
 function loadPartyCache(){ try{ return JSON.parse(localStorage.getItem("qw_parties_v3")); }catch(e){ return null; } }
+
+// ---- Remplissage de la journée (courbe cumulée des personnes admises) ----
+// walk = entrées individuelles par heure (commandes du jour) ; waves = vagues
+// d'anniversaires/groupes réservés (par heure). Cumul solide jusqu'à "maintenant",
+// puis projection pointillée avec les vagues encore à venir (déjà réservées).
+let FILL = null; // {day, walk:{h:qty}, waves:[{hour,qty}]}
+function ensureFill(){ const d=todayKey(); if(!FILL||FILL.day!==d) FILL={day:d,walk:{},waves:[]}; return FILL; }
+function setFillWalk(walk){ ensureFill().walk=walk||{}; saveFillCache(); renderFill(); }
+function setFillWaves(waves){ ensureFill().waves=waves||[]; saveFillCache(); renderFill(); }
+function saveFillCache(){ try{ localStorage.setItem("qw_fill_v1", JSON.stringify(FILL)); }catch(e){} }
+function loadFillCache(){ try{ return JSON.parse(localStorage.getItem("qw_fill_v1")); }catch(e){ return null; } }
+
+function nowHourTZ(){
+  const p=new Intl.DateTimeFormat("en-GB",{timeZone:TZ,hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
+  let hh=0,mm=0; for(const x of p){ if(x.type==="hour")hh=+x.value; if(x.type==="minute")mm=+x.value; }
+  return hh+mm/60;
+}
+
+function renderFill(){
+  const svg=$("#fillChart"); if(!svg) return;
+  if(!FILL || FILL.day!==todayKey()) return;
+  const walk=FILL.walk||{}, waves=(FILL.waves||[]).slice();
+  const now=nowHourTZ();
+  const waveByHour={}; waves.forEach(w=>waveByHour[w.hour]=(waveByHour[w.hour]||0)+w.qty);
+  const dataHours=[...Object.keys(walk).map(Number), ...waves.map(w=>w.hour)];
+  let OPEN=10, CLOSE=19;
+  if(dataHours.length){ OPEN=Math.min(OPEN,...dataHours); CLOSE=Math.max(CLOSE,...dataHours); }
+  const nowX=Math.min(Math.max(now,OPEN),CLOSE);
+
+  // cumul réalisé (heures déjà passées)
+  const realized=[]; const arrivedAnno=[]; let cum=0;
+  for(let h=OPEN;h<=CLOSE;h++){
+    if(h>now) break;
+    cum += (Number(walk[h])||0) + (waveByHour[h]||0);
+    realized.push([h,cum]);
+    if(waveByHour[h]) arrivedAnno.push({hour:h,after:cum,q:waveByHour[h]});
+  }
+  const nowCum=cum;
+  // projection (vagues à venir)
+  const upcoming=waves.filter(w=>w.hour>now).sort((a,b)=>a.hour-b.hour);
+  let proj=[[nowX,nowCum]]; let pc=nowCum; const upAnno=[];
+  for(const w of upcoming){ proj.push([w.hour,pc]); pc+=w.qty; proj.push([w.hour,pc]); upAnno.push({hour:w.hour,after:pc,q:w.qty}); }
+  proj.push([CLOSE,pc]);
+  const expected=pc;
+  const maxY=Math.max(10, expected, nowCum)*1.16;
+
+  const W=520,H=180, padL=8,padR=12,padT=16,padB=20;
+  const x=h=>padL+(h-OPEN)/(CLOSE-OPEN||1)*(W-padL-padR);
+  const y=v=>H-padB-(v/maxY)*(H-padT-padB);
+  const stepPts=pts=>{let d="";pts.forEach((p,i)=>{const X=x(p[0]),Y=y(p[1]);if(i===0)d+=`M${X},${Y}`;else{d+=`L${x(p[0])},${y(pts[i-1][1])} L${X},${Y}`;}});return d;};
+
+  let g="";
+  // grille + axes Y
+  for(let i=0;i<=3;i++){ const gv=maxY*i/3, yy=y(gv);
+    g+=`<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`;
+    g+=`<text x="${W-padR}" y="${(yy-3).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--muted)">${Math.round(gv)}</text>`;
+  }
+  // axe X (heures)
+  for(let h=Math.ceil(OPEN);h<=CLOSE;h++){ g+=`<text x="${x(h).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="9" fill="var(--muted)">${h}h</text>`; }
+  // aire réalisée
+  if(realized.length){
+    const areaD=stepPts(realized)+`L${x(nowX)},${y(nowCum)} L${x(nowX)},${y(0)} L${x(OPEN)},${y(0)} Z`;
+    g+=`<defs><linearGradient id="fg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--accent)" stop-opacity="0.34"/><stop offset="100%" stop-color="var(--accent)" stop-opacity="0.04"/></linearGradient></defs>`;
+    g+=`<path d="${areaD}" fill="url(#fg)"/>`;
+    g+=`<path d="${stepPts([...realized,[nowX,nowCum]])}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  // projection pointillée
+  if(upcoming.length){
+    g+=`<path d="${stepPts(proj)}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+  // ligne "maintenant" + marqueur
+  if(now>=OPEN && now<=CLOSE){
+    g+=`<line x1="${x(nowX).toFixed(1)}" y1="${padT-4}" x2="${x(nowX).toFixed(1)}" y2="${H-padB}" stroke="var(--ink)" stroke-width="1" stroke-dasharray="2 3" opacity="0.35"/>`;
+    if(realized.length) g+=`<circle cx="${x(nowX).toFixed(1)}" cy="${y(nowCum).toFixed(1)}" r="5" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>`;
+  }
+  // pastilles de vagues
+  const pill=(h,after,q,up)=>{ if(q<6) return ""; const col=up?"var(--web)":"var(--accent)"; const txt="+"+q; const w=txt.length*6.4+10; const cx=Math.max(padL+w/2,Math.min(W-padR-w/2,x(h))); const cy=Math.max(padT+7,y(after)-11);
+    return `<g><rect x="${(cx-w/2).toFixed(1)}" y="${(cy-8).toFixed(1)}" width="${w.toFixed(1)}" height="15" rx="7" fill="${col}"/><text x="${cx.toFixed(1)}" y="${(cy+2.5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${txt}</text></g>`; };
+  arrivedAnno.forEach(a=>g+=pill(a.hour,a.after,a.q,false));
+  upAnno.forEach(a=>g+=pill(a.hour,a.after,a.q,true));
+
+  svg.innerHTML=g;
+
+  // en-tête chiffré
+  $("#fillHero").innerHTML = nowCum
+    ? `${nowCum} <small>admis${expected>nowCum?` · ${expected} attendus`:''}</small>`
+    : `<small>Pas encore d'entrée aujourd'hui</small>`;
+  const next=upcoming[0];
+  $("#fillSub").innerHTML = next
+    ? `Prochaine vague : <span class="wave">+${next.qty} invités à ${next.hour}h</span>`
+    : (nowCum? "Journée en cours" : "Les arrivées s'afficheront ici au fil de la journée");
+  const hh=new Intl.DateTimeFormat("fr-BE",{hour:"2-digit",minute:"2-digit",timeZone:TZ}).format(new Date());
+  const mm=$("#fillMeta"); if(mm) mm.textContent=hh;
+}
 
 // ---- Pop-up fiche client (au clic sur une fête) ----
 const CLIENTS = {}; // cache mémoire des fiches déjà chargées
@@ -533,7 +666,7 @@ async function loadVenture(){
 $("#refreshBtn").onclick=()=>refresh(true);
 $("#saveToken").onclick=()=>{ const v=$("#tokenInput").value.trim(); if(!v)return;
   localStorage.setItem(LS_TOKEN,v); hideToken(); loadVenture(); refresh(true); };
-$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1","qw_parties_v2","qw_parties_v3"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
+$("#clearToken").onclick=()=>{ ["qw_token","qw_cache_v1","qw_items_v1","qw_parties_v1","qw_parties_v2","qw_parties_v3","qw_fill_v1"].forEach(k=>localStorage.removeItem(k)); location.reload(); };
 
 // clic sur une fête -> pop-up fiche client (délégué sur #content, stable entre les rendus)
 $("#content").addEventListener("click", e=>{
@@ -553,10 +686,11 @@ $("#foot").innerHTML="Données Qweekle en direct · l'appareil garde le token en
 (function(){
   ITEMS=loadItemsCache();
   PARTIES=loadPartyCache();
+  FILL=loadFillCache();
   const cached=loadCache();
   if(cached){ render(cached.agg); setUpdated(cached.t,false); }
   if(!getToken()){ needToken(); }
-  else { loadVenture(); refresh(true); }
+  else { loadVenture(); refresh(); }
 })();
 </script>
 </body>
